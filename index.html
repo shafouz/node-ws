@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>ws node</title>
+    <script>
+      window.onload = () => {
+        let input = document.getElementById("sendMessage");
+        window.addEventListener("keyup", function (event) {
+          if (event.key === "Enter") {
+            input.click();
+          }
+        });
+      };
+
+      function generateRandomString(length) {
+        let result = "";
+        const characters =
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+        for (let i = 0; i < length; i++) {
+          const randomIndex = Math.floor(Math.random() * characters.length);
+          result += characters.charAt(randomIndex);
+        }
+
+        return result;
+      }
+
+      const user = localStorage.getItem("user") || generateRandomString(16);
+      localStorage.setItem("user", user);
+
+      const room = new URL(document.location).searchParams.get("room");
+      const ws = new WebSocket(`ws://localhost:8001`);
+
+      ws.onmessage = (event) => {
+        const messages = document.getElementById("messages");
+        const message = document.createElement("li");
+
+        let data = JSON.parse(event.data);
+
+        const content = document.createTextNode(
+          `${data.user}: ${data.message}`
+        );
+        message.appendChild(content);
+        messages.appendChild(message);
+      };
+
+      function wsSendMessage() {
+        let message = document.getElementById("message").value;
+        if (message === "" || message === null || message === undefined) {
+          return;
+        }
+
+        ws.send(
+          JSON.stringify({
+            user: user,
+            message: document.getElementById("message").value,
+            room: room,
+          })
+        );
+      }
+    </script>
+  </head>
+  <body>
+    <h1>ws node</h1>
+    <form onsubmit="event.preventDefault()">
+      <input
+        type="text"
+        name="message"
+        id="message"
+        placeholder="write your message"
+      />
+      <button type="button" id="sendMessage" onclick="wsSendMessage()">
+        send
+      </button>
+    </form>
+    <ul id="messages">
+      <% if (messages) { %> <% for (const message of messages) { %>
+      <li><%= message %></li>
+      <% } %> <% } %>
+    </ul>
+  </body>
+</html>
