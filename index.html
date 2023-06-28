@@ -34,6 +34,11 @@
       const ws = new WebSocket(`ws://localhost:8001`);
 
       ws.onmessage = (event) => {
+        if (event.data === "ping") {
+          ws.send("pong");
+          return;
+        }
+
         const messages = document.getElementById("messages");
         const message = document.createElement("li");
 
@@ -76,10 +81,17 @@
         send
       </button>
     </form>
+    <h1>online users</h1>
+    <div>
+      <% for (const user of users) { %>
+      <b><%= user %></b>
+      <% } %>
+    </div>
+    <hr />
     <ul id="messages">
-      <% if (messages) { %> <% for (const message of messages) { %>
+      <% for (const message of messages) { %>
       <li><%= message %></li>
-      <% } %> <% } %>
+      <% } %>
     </ul>
   </body>
 </html>
