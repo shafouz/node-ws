@@ -1,10 +1,20 @@
 import { WebSocketServer, WebSocket } from "ws";
+import moment from "moment";
 
 export type Room = {
   id: number;
-  users: string[];
-  connections: WebSocket[];
-  messages: string[];
+  users: User[];
+};
+
+type User = {
+  name: string;
+  messages: Message[];
+  connection: WebSocket;
+};
+
+type Message = {
+  message: string;
+  timestamp: string;
 };
 
 // on connect create a new room
@@ -21,34 +31,64 @@ function startWebSocketServer(rooms: Room[]): WebSocketServer {
       roomId = isNaN(roomId) ? 0 : roomId;
 
       let room = rooms.find((room) => room.id === roomId);
+      let user: User | undefined;
 
       if (room) {
-        if (!room.users.includes(parsed.user)) {
-          room.connections.push(ws);
-          room.users.push(parsed.user);
+        // room case
+        // check if user is not in room
+        // add user to room
+        user = room.users.find((user) => user.name === parsed.user);
+
+        if (!user) {
+          // create user
+          user = {
+            name: parsed.user,
+            messages: [],
+            connection: ws,
+          };
+
+          // add user to room
+          room.users.push(user);
         }
       } else {
+        // no room case
         // create new room
-        rooms.push({
-          id: roomId,
-          connections: [ws],
-          users: [parsed.user],
-          messages: [],
-        });
-
-        // update room value to new room
+        // add user to room
+        // add room to rooms
         room = {
           id: roomId,
-          connections: [ws],
-          users: [parsed.user],
-          messages: [],
+          users: [],
         };
+
+        user = {
+          name: parsed.user,
+          messages: [],
+          connection: ws,
+        };
+
+        room.users.push(user);
+        rooms.push(room);
       }
 
-      room.connections.forEach((socket) => {
-        if (socket.readyState === WebSocket.OPEN) {
-          room?.messages.push(parsed.message);
-          socket.send(data.toString());
+      parsed.timestamp = moment(Date.now()).format("HH:mm:ss");
+
+      let message: Message = {
+        message: parsed.message,
+        timestamp: parsed.timestamp,
+      };
+
+      user?.messages.push(message);
+
+      room.users.forEach((__user) => {
+        if (__user.connection.readyState === WebSocket.OPEN) {
+          // let pp = rooms.map((room) =>
+          //   room.users.map((user) => {
+          //     return { user: user.name, messages: user.messages };
+          //   })
+          // );
+          // console.log(JSON.stringify(pp));
+
+          __user.connection.send(JSON.stringify(parsed));
         }
       });
     });
