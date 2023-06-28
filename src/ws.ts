@@ -1,26 +1,53 @@
 import { WebSocketServer, WebSocket } from "ws";
 import moment from "moment";
 
+// users never changes
+// but online users does
+// active_users: string[], splice this instead of users
+// add user here on connection
+// remove on close
+// diff between users and active users, red/green?
 export type Room = {
   id: number;
   users: User[];
+  active_users: string[];
 };
 
 type User = {
   name: string;
   messages: Message[];
-  connection: WebSocketWithUsername;
+  connection: WebSocketWithMetadata;
 };
 
-type WebSocketWithUsername = WebSocket & {
-  username: string;
-  room: number;
+type WebSocketWithMetadata = WebSocket & {
+  user: User;
+  room: Room;
 };
 
 type Message = {
+  user: string;
   message: string;
   timestamp: string;
 };
+
+function isValidMessage(message: string): boolean {
+  let res = !(
+    message === undefined ||
+    /^\s+$/.test(message) ||
+    message === null ||
+    message === ""
+  );
+
+  return res;
+}
+
+function handleMessage(parsed: any): Message {
+  return {
+    user: parsed.user,
+    message: parsed.message,
+    timestamp: moment(Date.now()).format("HH:mm:ss"),
+  };
+}
 
 function printRooms(rooms: Room[]) {
   let pp = rooms.map((room) =>
@@ -31,27 +58,33 @@ function printRooms(rooms: Room[]) {
   console.log(JSON.stringify(pp));
 }
 
-function get_room_and_user(
+function parse_int_no_nan(some_number_str: string): number {
+  let temp_room_id = parseInt(some_number_str);
+  return Number.isNaN(temp_room_id) ? 0 : temp_room_id;
+}
+
+function handle_user_and_room(
   parsed: any,
   rooms: Room[],
-  ws: WebSocketWithUsername
-): { user: User; room: Room } {
+  ws: WebSocketWithMetadata
+): { user: User; room: Room; message: Message } {
   let user: User = {
     name: "",
     messages: [],
     connection: ws,
   };
 
-  let roomId = parsed.room;
-  let room = rooms.find((room) => room.id === roomId);
+  let room_id = parse_int_no_nan(parsed.room);
+  let room = rooms.find((room) => room.id === room_id);
+  let message = handleMessage(parsed);
 
   if (room) {
     // room case
     // check if user is not in room
     // add user to room
-    let user_check = room.users.find((user) => user.name === parsed.user);
+    let user_index = room.users.findIndex((user) => user.name === parsed.user);
 
-    if (!user_check) {
+    if (user_index === -1) {
       // create user
       user = {
         name: parsed.user,
@@ -60,7 +93,19 @@ function get_room_and_user(
       };
 
       // add user to room
+      if (isValidMessage(message.message)) {
+        user.messages.push(message);
+      }
+
       room.users.push(user);
+    } else {
+      user = room.users[user_index];
+
+      user.connection = ws;
+
+      if (isValidMessage(message.message)) {
+        user.messages.push(message);
+      }
     }
   } else {
     // no room case
@@ -68,8 +113,9 @@ function get_room_and_user(
     // add user to room
     // add room to rooms
     room = {
-      id: roomId,
+      id: room_id,
       users: [],
+      active_users: [],
     };
 
     user = {
@@ -78,17 +124,66 @@ function get_room_and_user(
       connection: ws,
     };
 
+    if (isValidMessage(message.message)) {
+      user.messages.push(message);
+    }
     room.users.push(user);
     rooms.push(room);
   }
 
-  return { user, room };
+  ws.user = user;
+  ws.room = room;
+
+  return { user, room, message };
 }
 
 function startWebSocketServer(rooms: Room[]): WebSocketServer {
   const wss = new WebSocketServer({ port: 8001 });
 
-  wss.on("connection", function connection(ws: WebSocketWithUsername) {
+  wss.on("connection", function connection(ws: WebSocketWithMetadata) {
+    ws.on("message", (data) => {
+      let parsed = JSON.parse(data.toString());
+      console.log("DEBUGPRINT[2]: ws.ts:144: parsed=", parsed);
+
+      if (parsed.message_type === "open") {
+        let { user, room } = handle_user_and_room(parsed, rooms, ws);
+        room.active_users.push(user.name);
+        parsed.message_type = "user_add";
+
+        user.connection.send(JSON.stringify(parsed));
+        return;
+      }
+
+      let { room, message } = handle_user_and_room(parsed, rooms, ws);
+
+      room.users.forEach((__user) => {
+        if (__user.connection.readyState === WebSocket.OPEN) {
+          // printRooms(rooms);
+
+          __user.connection.send(JSON.stringify(message));
+        }
+      });
+    });
+
+    ws.on("close", () => {
+      ws.room?.active_users.splice(
+        ws.room?.active_users.findIndex(
+          (username) => username === ws.user.name
+        ),
+        1
+      );
+
+      ws.user.connection.send(
+        JSON.stringify({
+          message_type: "user_remove",
+          user: ws.user.name,
+        })
+      );
+
+      clearInterval(pingIntervalId);
+      ws.terminate();
+    });
+
     const pingInterval = 2500; // Interval in milliseconds (e.g., 5 seconds)
 
     const pingIntervalId = setInterval(() => {
@@ -98,51 +193,14 @@ function startWebSocketServer(rooms: Room[]): WebSocketServer {
       }
     }, pingInterval);
 
-    ws.on("pong", () => {
-      // console.log("pong");
-    });
+    ws.on("pong", () => {});
 
-    ws.on("close", () => {
-      clearInterval(pingIntervalId);
-      ws.terminate();
-
-      let room = rooms.find((room) => room.id === ws.room);
-
-      room?.users.splice(
-        room?.users.findIndex((user) => user.name === ws.username),
-        1
-      );
-    });
-
-    ws.on("message", function message(data) {
-      let parsed = JSON.parse(data.toString());
-
-      let { room, user } = get_room_and_user(parsed, rooms, ws);
-      console.log("DEBUGPRINT[13]: ws.ts:121: room=", room);
-      console.log("DEBUGPRINT[14]: ws.ts:122: user=", user.name);
-
-      parsed.timestamp = moment(Date.now()).format("HH:mm:ss");
-      let message = {
-        message: parsed.message,
-        timestamp: parsed.timestamp,
-      };
-      user?.messages.push(message);
-
-      room?.users.forEach((__user) => {
-        if (__user.connection.readyState === WebSocket.OPEN) {
-          // printRooms(rooms);
-
-          __user.connection.send(JSON.stringify(parsed));
-        }
-      });
-
-      // bad
-      ws.username = user.name;
-      ws.room = room.id;
+    ws.on("error", (err) => {
+      console.log("DEBUGPRINT[4]: ws.ts:159: err=", err);
     });
   });
 
   return wss;
 }
 
-export { startWebSocketServer, printRooms };
+export { startWebSocketServer, printRooms, parse_int_no_nan };

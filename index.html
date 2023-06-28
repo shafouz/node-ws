@@ -5,6 +5,51 @@
     <meta name="viewport" content="width=device-width" />
     <title>ws node</title>
     <script>
+      const ws = new WebSocket(`ws://localhost:8001`);
+
+      const user = localStorage.getItem("user") || generateRandomString(16);
+      localStorage.setItem("user", user);
+
+      const room = new URL(document.location).searchParams.get("room");
+
+      ws.onopen = () => {
+        ws.send(
+          JSON.stringify({
+            user: user,
+            room: room,
+            message_type: "open",
+          })
+        );
+      };
+
+      ws.onmessage = (event) => {
+        let data = JSON.parse(event.data);
+
+        if (data === "ping") {
+          ws.send("pong");
+        } else if (data.message_type === "user_add") {
+          const users = document.getElementById("users");
+          const user = document.createElement("b");
+          user.setAttribute("id", `user_${data.user}`);
+
+          const content = document.createTextNode(`${data.user}`);
+          user.appendChild(content);
+          users.appendChild(user);
+        } else if (data.message_type === "user_remove") {
+          const user = document.getElementById(`user_${data.user}`);
+          user.remove();
+        } else {
+          const messages = document.getElementById("messages");
+          const message = document.createElement("li");
+
+          const content = document.createTextNode(
+            `${data.timestamp} - ${data.user}: ${data.message}`
+          );
+          message.appendChild(content);
+          messages.appendChild(message);
+        }
+      };
+
       window.onload = () => {
         let input = document.getElementById("sendMessage");
         window.addEventListener("keyup", function (event) {
@@ -26,30 +71,6 @@
 
         return result;
       }
-
-      const user = localStorage.getItem("user") || generateRandomString(16);
-      localStorage.setItem("user", user);
-
-      const room = new URL(document.location).searchParams.get("room");
-      const ws = new WebSocket(`ws://localhost:8001`);
-
-      ws.onmessage = (event) => {
-        if (event.data === "ping") {
-          ws.send("pong");
-          return;
-        }
-
-        const messages = document.getElementById("messages");
-        const message = document.createElement("li");
-
-        let data = JSON.parse(event.data);
-
-        const content = document.createTextNode(
-          `${data.timestamp} - ${data.user}: ${data.message}`
-        );
-        message.appendChild(content);
-        messages.appendChild(message);
-      };
 
       function wsSendMessage() {
         let message = document.getElementById("message").value;
@@ -82,9 +103,9 @@
       </button>
     </form>
     <h1>online users</h1>
-    <div>
+    <div id="users">
       <% for (const user of users) { %>
-      <b><%= user %></b>
+      <b id="user_<%= user %>"><%= user %></b>
       <% } %>
     </div>
     <hr />

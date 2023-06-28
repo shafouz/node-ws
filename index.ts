@@ -1,6 +1,11 @@
 import { readFileSync } from "fs";
 import * as http from "http";
-import { startWebSocketServer, Room, printRooms } from "./src/ws";
+import {
+  startWebSocketServer,
+  Room,
+  printRooms,
+  parse_int_no_nan,
+} from "./src/ws";
 import { render } from "ejs";
 import moment from "moment";
 
@@ -17,20 +22,17 @@ function message_template(name: string, message: string, timestamp: string) {
   return `${timestamp} - ${name}: ${message}`;
 }
 
-function fmt_users(room: Room | undefined): string[] {
-  console.log("DEBUGPRINT[12]: index.ts:21: room=", room);
-
+function fmt_active_users(room: Room | undefined): string[] {
   if (room === undefined) {
     return [];
   }
 
   let users: string[] = [];
 
-  for (const user of room.users) {
-    users.push(user.name);
+  for (const user of room.active_users) {
+    users.push(user);
   }
 
-  console.log("DEBUGPRINT[11]: index.ts:31: users=", users);
   return users;
 }
 
@@ -66,14 +68,13 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/javascript" });
     res.end(readFileSync("./src/frontend.js"));
   } else {
-    let roomId = parseInt(url.searchParams.get("room") ?? "0");
-    let room = rooms.find((room) => room.id === roomId);
+    let room_id = parse_int_no_nan(url.searchParams.get("room") ?? "");
+    let room = rooms.find((room) => room.id === room_id);
 
     let page = readFileSync("./index.html");
-    console.log("DEBUGPRINT[15]: index.ts:73: rooms=", rooms);
 
     let messages = fmt_messages(room);
-    let users = fmt_users(room);
+    let users = fmt_active_users(room);
     let html = render(page.toString(), { messages, users });
 
     res.writeHead(200, { "Content-Type": "text/html" });
