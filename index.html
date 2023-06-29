@@ -32,7 +32,7 @@
           const user = document.createElement("b");
           user.setAttribute("id", `user_${data.user}`);
 
-          const content = document.createTextNode(`${data.user}`);
+          const content = document.createTextNode(` ${data.user}`);
           user.appendChild(content);
           users.appendChild(user);
         } else if (data.message_type === "user_remove") {

@@ -150,7 +150,10 @@ function startWebSocketServer(rooms: Room[]): WebSocketServer {
         room.active_users.push(user.name);
         parsed.message_type = "user_add";
 
-        user.connection.send(JSON.stringify(parsed));
+        room.users.forEach((__user) => {
+          __user.connection.send(JSON.stringify(parsed));
+        });
+
         return;
       }
 
@@ -173,12 +176,14 @@ function startWebSocketServer(rooms: Room[]): WebSocketServer {
         1
       );
 
-      ws.user.connection.send(
-        JSON.stringify({
-          message_type: "user_remove",
-          user: ws.user.name,
-        })
-      );
+      ws.room.users.forEach((__user) => {
+        __user.connection.send(
+          JSON.stringify({
+            message_type: "user_remove",
+            user: ws.user.name,
+          })
+        );
+      });
 
       clearInterval(pingIntervalId);
       ws.terminate();
